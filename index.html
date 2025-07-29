@@ -1,0 +1,566 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Visual Coder - Logic Edition</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/atom-one-dark.min.css">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+    <style>
+        body { font-family: 'Inter', sans-serif; background-color: #111827; color: #e5e7eb; }
+        .glass-card { background: rgba(31, 41, 55, 0.7); backdrop-filter: blur(12px); border: 1px solid rgba(255, 255, 255, 0.1); border-radius: 1rem; }
+        .btn-primary { background-color: #3b82f6; transition: all 0.3s ease; }
+        .btn-primary:hover { background-color: #2563eb; box-shadow: 0 0 15px rgba(59, 130, 246, 0.5); }
+        .btn-secondary { background-color: #4f46e5; transition: all 0.3s ease; }
+        .btn-secondary:hover { background-color: #4338ca; }
+        select, input { background-color: #374151; border-color: #4b5563; color: #e5e7eb; }
+        .wiring-diagram-container { background: #1f2937; border-radius: 0.75rem; padding: 1rem; border: 1px solid #4b5563; min-height: 200px; overflow: auto; }
+        .pin-label { font-size: 9px; fill: #d1d5db; text-anchor: middle; font-weight: 500; }
+        .board-pin-highlight { transition: all 0.2s ease-in-out; fill: rgba(59, 130, 246, 0.7); }
+        .pin-config-row:hover { background-color: rgba(59, 130, 246, 0.1); }
+    </style>
+</head>
+<body class="p-4 md:p-8">
+
+    <div class="max-w-screen-2xl mx-auto grid grid-cols-1 lg:grid-cols-2 gap-8">
+        
+        <!-- Left Panel: Configuration -->
+        <div class="glass-card p-6 space-y-6 self-start">
+            <h1 class="text-2xl font-bold text-white">Visual Coder - Logic Edition</h1>
+            
+            <div>
+                <label for="boardSelector" class="block mb-2 text-sm font-medium text-gray-300">1. Select Your Board</label>
+                <select id="boardSelector" class="w-full p-2.5 rounded-lg border focus:ring-blue-500 focus:border-blue-500"></select>
+            </div>
+
+            <div>
+                <label for="componentSelector" class="block mb-2 text-sm font-medium text-gray-300">2. Add Components</label>
+                <div class="flex gap-2">
+                    <select id="componentSelector" class="w-full p-2.5 rounded-lg border focus:ring-blue-500 focus:border-blue-500"></select>
+                    <button id="addComponentBtn" class="btn-secondary text-white font-bold py-2 px-4 rounded-lg">Add</button>
+                </div>
+            </div>
+
+            <div>
+                <h3 class="text-lg font-semibold mb-2 text-white">3. Configure Pin Connections</h3>
+                <div id="pinConfigContainer" class="space-y-4 max-h-[35vh] overflow-y-auto pr-2">
+                    <p class="text-gray-400">Your added components will appear here...</p>
+                </div>
+            </div>
+            
+            <div>
+                <h3 class="text-lg font-semibold mb-2 text-white">4. Define Logic</h3>
+                <div id="logicContainer" class="space-y-3 max-h-[25vh] overflow-y-auto pr-2">
+                    <p class="text-gray-400">Create rules to link components...</p>
+                </div>
+                <button id="addLogicBtn" class="mt-2 text-sm btn-secondary text-white py-1 px-3 rounded-lg">+ Add Rule</button>
+            </div>
+
+            <button id="generateCodeBtn" class="w-full btn-primary text-white font-bold py-3 px-4 rounded-lg text-lg mt-4">
+                ✨ Generate Code
+            </button>
+        </div>
+
+        <!-- Right Panel: Visuals & Code -->
+        <div class="space-y-8 self-start">
+            <div class="glass-card p-6">
+                <h3 class="text-xl font-semibold mb-4 text-white">Visual Wiring Diagram</h3>
+                <div id="wiringDiagramContainer" class="wiring-diagram-container">
+                    <p class="text-gray-400">Select components and pins to see the diagram.</p>
+                </div>
+            </div>
+
+            <div class="glass-card p-6 flex flex-col">
+                <div class="flex justify-between items-center mb-4">
+                    <h2 class="text-xl font-bold text-white">Generated Code</h2>
+                    <button id="copyCodeBtn" class="bg-gray-600 hover:bg-gray-500 text-white font-bold py-2 px-4 rounded-lg">Copy</button>
+                </div>
+                <div id="notification" class="hidden bg-green-500 text-white text-center p-2 rounded-lg mb-2">Code copied!</div>
+                <div id="error-panel" class="hidden bg-red-500 text-white p-3 rounded-lg mb-4"></div>
+                <div class="bg-gray-900 rounded-lg p-4 flex-grow overflow-auto h-96">
+                    <pre><code id="generatedCode" class="language-cpp">// Your generated code will appear here...</code></pre>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // --- DATA: Component Knowledge Base ---
+        const componentDB = {
+            'LED': { 
+                name: 'LED', 
+                pins: [{ name: 'Anode', type: 'Digital' }, { name: 'Cathode', type: 'GND' }], 
+                libs: [], 
+                globals: 'const int ledPin_{id} = {Anode};', 
+                setup: 'pinMode(ledPin_{id}, OUTPUT);', 
+                loop: null,
+                logic: {
+                    conditions: [],
+                    actions: [
+                        { name: 'Turn On', code: 'digitalWrite(ledPin_{id}, HIGH);' },
+                        { name: 'Turn Off', code: 'digitalWrite(ledPin_{id}, LOW);' },
+                        { name: 'Toggle', code: 'digitalWrite(ledPin_{id}, !digitalRead(ledPin_{id}));' }
+                    ]
+                },
+                visual: { w: 60, h: 80, pins: { 'Anode': { x: 10, y: 70 }, 'Cathode': { x: 50, y: 70 } }, svg: `<rect x="5" y="5" width="50" height="50" rx="5" fill="#4a5568"/><path d="M15 5 L15 0 M45 5 L45 0 M10 55 l-5 15 M50 55 l5 15" stroke="#9ca3af" stroke-width="2"/><circle cx="30" cy="30" r="15" fill="rgba(239, 68, 68, 0.7)"/><text x="30" y="75" text-anchor="middle" font-size="10" fill="#e5e7eb">LED</text>` }
+            },
+            'Button': { 
+                name: 'Push Button', 
+                pins: [{ name: 'Signal', type: 'Digital' }, { name: 'VCC', type: '5V' }, { name: 'GND', type: 'GND' }], 
+                libs: [], 
+                globals: 'const int buttonPin_{id} = {Signal};\nint buttonState_{id};', 
+                setup: 'pinMode(buttonPin_{id}, INPUT_PULLUP);', 
+                loop: { code: 'buttonState_{id} = digitalRead(buttonPin_{id});', isStateReader: true },
+                logic: {
+                    conditions: [
+                        { name: 'is Pressed', code: 'buttonState_{id} == LOW' },
+                        { name: 'is Released', code: 'buttonState_{id} == HIGH' }
+                    ],
+                    actions: []
+                },
+                visual: { w: 60, h: 80, pins: { 'Signal': { x: 10, y: 70 }, 'VCC': { x: 30, y: 70 }, 'GND': { x: 50, y: 70 } }, svg: `<rect x="5" y="15" width="50" height="40" rx="5" fill="#4a5568"/><rect x="15" y="5" width="30" height="20" rx="5" fill="#6b7280"/><path d="M10 55 l0 15 M30 55 l0 15 M50 55 l0 15" stroke="#9ca3af" stroke-width="2"/><text x="30" y="75" text-anchor="middle" font-size="10" fill="#e5e7eb">Button</text>` }
+            },
+            'IR_Sensor': {
+                name: 'IR Obstacle Sensor',
+                pins: [{ name: 'OUT', type: 'Digital' }, { name: 'VCC', type: '5V' }, { name: 'GND', type: 'GND' }],
+                libs: [],
+                globals: 'const int irPin_{id} = {OUT};\nint irState_{id};',
+                setup: 'pinMode(irPin_{id}, INPUT);',
+                loop: { code: 'irState_{id} = digitalRead(irPin_{id});', isStateReader: true },
+                logic: {
+                    conditions: [
+                        { name: 'detects Obstacle', code: 'irState_{id} == LOW' },
+                        { name: 'is Clear', code: 'irState_{id} == HIGH' }
+                    ],
+                    actions: []
+                },
+                visual: { w: 70, h: 80, pins: { 'VCC': { x: 10, y: 70 }, 'GND': { x: 35, y: 70 }, 'OUT': { x: 60, y: 70 } }, svg: `<rect x="5" y="5" width="60" height="50" rx="5" fill="#4a5568"/><circle cx="22" cy="30" r="10" fill="#111827"/><circle cx="48" cy="30" r="10" fill="#374151"/><path d="M10 55 l0 15 M35 55 l0 15 M60 55 l0 15" stroke="#9ca3af" stroke-width="2"/><text x="35" y="75" text-anchor="middle" font-size="10" fill="#e5e7eb">IR Sensor</text>` }
+            },
+            'Buzzer': { 
+                name: 'Active Buzzer', 
+                pins: [{ name: 'Signal', type: 'Digital' }, { name: 'GND', type: 'GND' }], 
+                libs: [], 
+                globals: 'const int buzzerPin_{id} = {Signal};', 
+                setup: 'pinMode(buzzerPin_{id}, OUTPUT);', 
+                loop: null,
+                logic: {
+                    conditions: [],
+                    actions: [
+                        { name: 'Beep', code: 'digitalWrite(buzzerPin_{id}, HIGH);' },
+                        { name: 'Silence', code: 'digitalWrite(buzzerPin_{id}, LOW);' }
+                    ]
+                },
+                visual: { w: 60, h: 80, pins: { 'Signal': { x: 15, y: 70 }, 'GND': { x: 45, y: 70 } }, svg: `<circle cx="30" cy="35" r="25" fill="#4a5568"/><circle cx="30" cy="35" r="10" fill="#1f2937"/><path d="M15 60 l0 10 M45 60 l0 10" stroke="#9ca3af" stroke-width="2"/><text x="30" y="75" text-anchor="middle" font-size="10" fill="#e5e7eb">Buzzer</text>` }
+            },
+            'DHT11': { 
+                name: 'DHT11 Temp & Humidity', 
+                pins: [{ name: 'DATA', type: 'Digital' }, { name: 'VCC', type: '5V' }, { name: 'GND', type: 'GND' }], 
+                libs: ['DHT.h'], 
+                globals: '#define DHTPIN_{id} {DATA}\n#define DHTTYPE DHT11\nDHT dht_{id}(DHTPIN_{id}, DHTTYPE);', 
+                setup: 'dht_{id}.begin();', 
+                loop: { code: 'float h = dht_{id}.readHumidity();\n  float t = dht_{id}.readTemperature();\n  if (isnan(h) || isnan(t)) {\n    Serial.println("Failed to read from DHT sensor!");\n  } else {\n    Serial.print("DHT{id} - Humidity: "); Serial.print(h);\n    Serial.print("% Temp: "); Serial.print(t);\n    Serial.println(" *C");\n  }', interval: 2000 },
+                logic: { conditions: [], actions: [] },
+                visual: { w: 70, h: 80, pins: { 'VCC': { x: 10, y: 70 }, 'DATA': { x: 35, y: 70 }, 'GND': { x: 60, y: 70 } }, svg: `<rect x="5" y="5" width="60" height="50" rx="5" fill="#3b82f6"/><rect x="10" y="10" width="50" height="40" fill="none" stroke="#e5e7eb" stroke-width="2" stroke-dasharray="4 4"/><path d="M10 55 l0 15 M35 55 l0 15 M60 55 l0 15" stroke="#9ca3af" stroke-width="2"/><text x="35" y="75" text-anchor="middle" font-size="10" fill="#e5e7eb">DHT11</text>` }
+            },
+            'Ultrasonic': { 
+                name: 'HC-SR04 Ultrasonic', 
+                pins: [{ name: 'Trig', type: 'Digital' }, { name: 'Echo', type: 'Digital' }, { name: 'VCC', type: '5V' }, { name: 'GND', type: 'GND' }], 
+                libs: [], 
+                globals: 'const int trigPin_{id} = {Trig};\nconst int echoPin_{id} = {Echo};', 
+                setup: 'pinMode(trigPin_{id}, OUTPUT);\n  pinMode(echoPin_{id}, INPUT);', 
+                loop: { code: 'digitalWrite(trigPin_{id}, LOW); delayMicroseconds(2); digitalWrite(trigPin_{id}, HIGH); delayMicroseconds(10); digitalWrite(trigPin_{id}, LOW); long duration = pulseIn(echoPin_{id}, HIGH); int distance = duration * 0.034 / 2; Serial.print("Ultrasonic{id} - Distance: "); Serial.print(distance); Serial.println(" cm");', interval: 1000 },
+                logic: { conditions: [], actions: [] },
+                visual: { w: 90, h: 80, pins: { 'VCC': { x: 10, y: 70 }, 'Trig': { x: 35, y: 70 }, 'Echo': { x: 60, y: 70 }, 'GND': { x: 85, y: 70 } }, svg: `<rect x="5" y="5" width="80" height="50" rx="5" fill="#4a5568"/><circle cx="25" cy="30" r="12" fill="#1f2937" stroke="#6b7280" stroke-width="2"/><circle cx="65" cy="30" r="12" fill="#1f2937" stroke="#6b7280" stroke-width="2"/><path d="M10 55 l0 15 M35 55 l0 15 M60 55 l0 15 M85 55 l0 15" stroke="#9ca3af" stroke-width="2"/><text x="45" y="75" text-anchor="middle" font-size="10" fill="#e5e7eb">HC-SR04</text>` }
+            },
+            'MPU6050': { 
+                name: 'MPU-6050 Gyro/Accel', 
+                pins: [{ name: 'SCL', type: 'SCL' }, { name: 'SDA', type: 'SDA' }, { name: 'VCC', type: '5V' }, { name: 'GND', type: 'GND' }], 
+                protocol: 'I2C', 
+                libs: ['Wire.h', 'Adafruit_MPU6050.h', 'Adafruit_Sensor.h'], 
+                globals: 'Adafruit_MPU6050 mpu_{id};', 
+                setup: 'if (!mpu_{id}.begin()) { Serial.println("MPU6050 not found!"); while (1) delay(10); }', 
+                loop: { code: 'sensors_event_t a, g, temp; mpu_{id}.getEvent(&a, &g, &temp); Serial.print("MPU6050({id}) Accel X: "); Serial.print(a.acceleration.x); Serial.print(" Y: "); Serial.print(a.acceleration.y); Serial.print(" Z: "); Serial.println(a.acceleration.z);', interval: 500 },
+                logic: { conditions: [], actions: [] },
+                visual: { w: 80, h: 80, pins: { 'VCC': { x: 10, y: 70 }, 'GND': { x: 28, y: 70 }, 'SCL': { x: 46, y: 70 }, 'SDA': { x: 64, y: 70 } }, svg: `<rect x="5" y="5" width="70" height="50" rx="5" fill="#c026d3"/><rect x="25" y="15" width="30" height="20" fill="#1f2937"/><path d="M10 55 l0 15 M28 55 l0 15 M46 55 l0 15 M64 55 l0 15" stroke="#9ca3af" stroke-width="2"/><text x="40" y="75" text-anchor="middle" font-size="10" fill="#e5e7eb">MPU6050</text>` }
+            }
+        };
+        const boardPins = {
+            'Arduino Uno':{
+                name:'Arduino Uno',
+                digital:['2','3','4','5','6','7','8','9','10','11','12','13'],
+                pwm: ['3','5','6','9','10','11'],
+                analog:['A0','A1','A2','A3','A4','A5'],
+                power:['5V','3.3V','GND','VIN'],
+                i2c:{sda:'A4',scl:'A5'},
+                visual:{
+                    w:500,h:350,
+                    svg: `<rect x="1" y="1" width="498" height="348" rx="10" fill="#00979D"/>
+                          <rect x="40" y="40" width="420" height="270" rx="5" fill="#374151"/>
+                          <rect x="15" y="270" width="70" height="70" fill="#6b7280"/>
+                          <rect x="415" y="50" width="60" height="60" fill="#6b7280"/>
+                          <rect x="155" y="55" width="40" height="40" fill="#1f2937"/>`,
+                    pins:{
+                        '13': {x:140, y:40}, '12': {x:160, y:40}, '11': {x:180, y:40}, '10': {x:200, y:40}, '9': {x:220, y:40}, '8': {x:240, y:40},
+                        '7': {x:280, y:40}, '6': {x:300, y:40}, '5': {x:320, y:40}, '4': {x:340, y:40}, '3': {x:360, y:40}, '2': {x:380, y:40},
+                        'GND': {x:120, y:40, isGnd: true},
+                        'A0': {x:320, y:310}, 'A1': {x:340, y:310}, 'A2': {x:360, y:310}, 'A3': {x:380, y:310}, 'A4': {x:400, y:310}, 'A5': {x:420, y:310},
+                        '5V': {x:260, y:310}, 'GND_2': {x:240, y:310, isGnd: true}, 'GND_3': {x:220, y:310, isGnd: true}, 'VIN': {x:200, y:310}, '3.3V': {x:280, y:310}
+                    }
+                }
+            },
+            'ESP32':{
+                name:'ESP32 Dev Module',
+                digital:['4','5','12','13','14','15','16','17','18','19','21','22','23','25','26','27','32','33'],
+                pwm: ['4','5','12','13','14','15','16','17','18','19','21','22','23','25','26','27','32','33'], // Most digital pins are PWM capable
+                analog:['34','35','36','39'],
+                power:['3.3V','GND','VIN'],
+                i2c:{sda:'22',scl:'21'},
+                visual:{
+                    w:250,h:500,
+                    svg: `<rect x="1" y="1" width="248" height="498" rx="10" fill="#27272a"/><rect x="30" y="50" width="190" height="400" rx="5" fill="#71717a"/>`,
+                    pins:{
+                        '13':{x:20,y:80},'12':{x:20,y:100},'14':{x:20,y:120},'27':{x:20,y:140},'26':{x:20,y:160},'25':{x:20,y:180},'33':{x:20,y:200},'32':{x:20,y:220},'35':{x:20,y:240},'34':{x:20,y:260},'39':{x:20,y:280},'36':{x:20,y:300},
+                        '23':{x:230,y:420},'22':{x:230,y:400},'21':{x:230,y:360},'19':{x:230,y:340},'18':{x:230,y:320},'5':{x:230,y:300},'17':{x:230,y:280},'16':{x:230,y:260},'4':{x:230,y:240},
+                        'GND':{x:20,y:420,isGnd:true},'VIN':{x:20,y:440},'3.3V':{x:20,y:40}
+                    }
+                }
+            }
+        };
+
+        // --- GLOBAL STATE ---
+        let addedComponents = [];
+        let logicRules = [];
+        let componentIdCounter = 0;
+        let logicRuleIdCounter = 0;
+
+        // --- DOM ELEMENTS ---
+        const boardSelector = document.getElementById('boardSelector');
+        const componentSelector = document.getElementById('componentSelector');
+        const addComponentBtn = document.getElementById('addComponentBtn');
+        const pinConfigContainer = document.getElementById('pinConfigContainer');
+        const logicContainer = document.getElementById('logicContainer');
+        const addLogicBtn = document.getElementById('addLogicBtn');
+        const generateCodeBtn = document.getElementById('generateCodeBtn');
+        const wiringDiagramContainer = document.getElementById('wiringDiagramContainer');
+        const generatedCodeEl = document.getElementById('generatedCode');
+        const copyCodeBtn = document.getElementById('copyCodeBtn');
+        const notification = document.getElementById('notification');
+        const errorPanel = document.getElementById('error-panel');
+
+        // --- INITIALIZATION ---
+        function initialize() {
+            Object.keys(boardPins).forEach(key => boardSelector.add(new Option(boardPins[key].name, key)));
+            Object.keys(componentDB).forEach(key => componentSelector.add(new Option(componentDB[key].name, key)));
+            addComponentBtn.addEventListener('click', handleAddComponent);
+            addLogicBtn.addEventListener('click', handleAddLogicRule);
+            generateCodeBtn.addEventListener('click', handleGenerateCode);
+            copyCodeBtn.addEventListener('click', handleCopyCode);
+            boardSelector.addEventListener('change', () => { renderPinConfigurations(); renderWiringDiagram(); });
+            renderAll();
+        }
+        
+        // --- RENDER FUNCTIONS ---
+        function renderAll() {
+            renderPinConfigurations();
+            renderLogicRules();
+            renderWiringDiagram();
+        }
+
+        function renderPinConfigurations() {
+            if (addedComponents.length === 0) {
+                pinConfigContainer.innerHTML = '<p class="text-gray-400">Your added components will appear here...</p>';
+                return;
+            }
+            pinConfigContainer.innerHTML = '';
+            addedComponents.forEach(comp => {
+                const compInfo = componentDB[comp.type];
+                const card = document.createElement('div');
+                card.className = 'glass-card p-4 border border-gray-600 rounded-lg';
+                let pinsHTML = compInfo.pins.map(pin => {
+                    const selectedBoardKey = boardSelector.value;
+                    const selectedBoard = boardPins[selectedBoardKey];
+                    let availablePins = [];
+                    if (pin.type === 'Digital') availablePins = selectedBoard.digital;
+                    else if (pin.type === 'Analog') availablePins = selectedBoard.analog;
+                    else if (pin.type === 'SDA') availablePins = [selectedBoard.i2c.sda];
+                    else if (pin.type === 'SCL') availablePins = [selectedBoard.i2c.scl];
+                    else availablePins = selectedBoard.power;
+                    const options = availablePins.map(p => {
+                        const isPwm = selectedBoard.pwm && selectedBoard.pwm.includes(p);
+                        const pinLabel = isPwm ? `${p} (PWM)` : p;
+                        return `<option value="${p}" ${comp.pinMapping[pin.name] === p ? 'selected' : ''}>${pinLabel}</option>`
+                    }).join('');
+                    const isAutoAssigned = (pin.type === 'SDA' || pin.type === 'SCL');
+                    if (isAutoAssigned) { comp.pinMapping[pin.name] = availablePins[0]; }
+                    return `<div class="pin-config-row flex items-center justify-between" data-board-pin-name="${comp.pinMapping[pin.name] || ''}"><label class="text-gray-300">${pin.name} (${pin.type})</label><select data-comp-id="${comp.id}" data-pin-name="${pin.name}" class="pin-selector w-1/2 p-2 rounded-lg border" ${isAutoAssigned ? 'disabled' : ''}><option value="">Select Pin</option>${options}</select></div>`;
+                }).join('');
+                card.innerHTML = `<div class="flex justify-between items-center mb-2"><h4 class="font-bold text-white">${compInfo.name} #${comp.id}</h4><button class="remove-btn text-red-400 hover:text-red-300" data-comp-id="${comp.id}">Remove</button></div><div class="space-y-2">${pinsHTML}</div>`;
+                pinConfigContainer.appendChild(card);
+            });
+            document.querySelectorAll('.remove-btn').forEach(btn => btn.addEventListener('click', handleRemoveComponent));
+            document.querySelectorAll('.pin-selector').forEach(sel => sel.addEventListener('change', handlePinSelection));
+            document.querySelectorAll('.pin-config-row').forEach(row => {
+                row.addEventListener('mouseenter', () => highlightBoardPin(row.dataset.boardPinName, true));
+                row.addEventListener('mouseleave', () => highlightBoardPin(row.dataset.boardPinName, false));
+            });
+        }
+
+        function renderLogicRules() {
+            if (addedComponents.length === 0) {
+                logicContainer.innerHTML = '<p class="text-gray-400">Add components before creating rules.</p>';
+                return;
+            }
+            if (logicRules.length === 0) {
+                logicContainer.innerHTML = '<p class="text-gray-400">Click "+ Add Rule" to start.</p>';
+                return;
+            }
+            logicContainer.innerHTML = '';
+            logicRules.forEach(rule => {
+                const ruleDiv = document.createElement('div');
+                ruleDiv.className = 'glass-card p-3 rounded-lg space-y-2';
+                const sourceComps = addedComponents.filter(c => componentDB[c.type].logic.conditions.length > 0);
+                const targetComps = addedComponents.filter(c => componentDB[c.type].logic.actions.length > 0);
+                const sourceOptions = sourceComps.map(c => `<option value="${c.id}" ${rule.sourceId == c.id ? 'selected' : ''}>${componentDB[c.type].name} #${c.id}</option>`).join('');
+                const targetOptions = targetComps.map(c => `<option value="${c.id}" ${rule.targetId == c.id ? 'selected' : ''}>${componentDB[c.type].name} #${c.id}</option>`).join('');
+                let conditionOptions = '';
+                if (rule.sourceId !== null) {
+                    const sourceComp = addedComponents.find(c => c.id == rule.sourceId);
+                    if(sourceComp) conditionOptions = componentDB[sourceComp.type].logic.conditions.map((cond, i) => `<option value="${i}" ${rule.conditionIndex == i ? 'selected' : ''}>${cond.name}</option>`).join('');
+                }
+                let actionOptions = '';
+                if (rule.targetId !== null) {
+                    const targetComp = addedComponents.find(c => c.id == rule.targetId);
+                    if(targetComp) actionOptions = componentDB[targetComp.type].logic.actions.map((act, i) => `<option value="${i}" ${rule.actionIndex == i ? 'selected' : ''}>${act.name}</option>`).join('');
+                }
+                ruleDiv.innerHTML = `
+                    <div class="flex items-center gap-2">
+                        <span class="font-bold text-blue-400">IF</span>
+                        <select class="logic-source flex-1 p-1 rounded-md border bg-gray-600 border-gray-500" data-rule-id="${rule.id}"><option value="">Select Trigger...</option>${sourceOptions}</select>
+                        <select class="logic-condition flex-1 p-1 rounded-md border bg-gray-600 border-gray-500" data-rule-id="${rule.id}"><option value="">is...</option>${conditionOptions}</select>
+                    </div>
+                    <div class="flex items-center gap-2">
+                        <span class="font-bold text-purple-400">THEN</span>
+                        <select class="logic-target flex-1 p-1 rounded-md border bg-gray-600 border-gray-500" data-rule-id="${rule.id}"><option value="">Select Target...</option>${targetOptions}</select>
+                        <select class="logic-action flex-1 p-1 rounded-md border bg-gray-600 border-gray-500" data-rule-id="${rule.id}"><option value="">do...</option>${actionOptions}</select>
+                    </div>
+                    <button class="remove-rule-btn text-xs text-red-400 hover:text-red-300" data-rule-id="${rule.id}">Remove Rule</button>
+                `;
+                logicContainer.appendChild(ruleDiv);
+            });
+            document.querySelectorAll('.remove-rule-btn').forEach(b => b.addEventListener('click', handleRemoveLogicRule));
+            document.querySelectorAll('.logic-source, .logic-condition, .logic-target, .logic-action').forEach(s => s.addEventListener('change', handleLogicChange));
+        }
+
+        function renderWiringDiagram() {
+            if (addedComponents.length === 0) {
+                wiringDiagramContainer.innerHTML = '<p class="text-gray-400">Add components and assign pins to see the diagram.</p>';
+                return;
+            }
+            const selectedBoardKey = boardSelector.value;
+            const boardVisual = boardPins[selectedBoardKey].visual;
+            const boardData = boardPins[selectedBoardKey];
+
+            const totalComponentWidth = addedComponents.reduce((sum, comp) => sum + componentDB[comp.type].visual.w + 30, 0);
+            const svgWidth = Math.max(boardVisual.w, totalComponentWidth);
+            const svgHeight = boardVisual.h + 150; 
+            const componentY = boardVisual.h + 70;
+            const pinColors = ['#f87171', '#fb923c', '#fbbf24', '#a3e63e', '#4ade80', '#34d399', '#2dd4bf', '#60a5fa', '#818cf8', '#a78bfa'];
+
+            let componentsSVG = '';
+            let currentX = (svgWidth - totalComponentWidth) / 2;
+            addedComponents.forEach(comp => {
+                const compVisual = componentDB[comp.type].visual;
+                componentsSVG += `<g transform="translate(${currentX}, ${componentY})">${compVisual.svg}</g>`;
+                currentX += compVisual.w + 30;
+            });
+            
+            let boardLabelsSVG = '';
+            Object.entries(boardVisual.pins).forEach(([name, coords]) => {
+                let label = name.replace('_2','').replace('_3','');
+                const isPwm = boardData.pwm && boardData.pwm.includes(label);
+                if (isPwm) label = `~${label}`;
+                
+                let yOffset = coords.y > 200 ? 12 : -12;
+                boardLabelsSVG += `<text class="pin-label" x="${coords.x}" y="${coords.y + yOffset}">${label}</text>`;
+            });
+
+            let linesSVG = '';
+            let colorIndex = 0;
+            currentX = (svgWidth - totalComponentWidth) / 2;
+            addedComponents.forEach(comp => {
+                const compVisual = componentDB[comp.type].visual;
+                for(const compPinName in comp.pinMapping) {
+                    const boardPinName = comp.pinMapping[compPinName];
+                    if (boardPinName) {
+                        const compPinCoords = compVisual.pins[compPinName];
+                        // Find the correct board pin, handling multiple GNDs
+                        const boardPinCoords = Object.entries(boardVisual.pins).find(([name, coords]) => name.startsWith(boardPinName))?.[1];
+
+                        if(compPinCoords && boardPinCoords) {
+                            const startX = currentX + compPinCoords.x;
+                            const startY = componentY + compPinCoords.y;
+                            const endX = boardPinCoords.x;
+                            const endY = boardPinCoords.y;
+                            const midY = componentY - 30;
+                            const color = boardPinCoords.isGnd ? '#9ca3af' : pinColors[colorIndex % pinColors.length];
+                            colorIndex++;
+                            linesSVG += `<path d="M ${startX} ${startY} V ${midY} H ${endX} V ${endY}" stroke="${color}" stroke-width="2" fill="none"/>`;
+                        }
+                    }
+                }
+                currentX += compVisual.w + 30;
+            });
+
+            const boardPinHighlights = Object.entries(boardVisual.pins).map(([name, coords]) => `<circle id="highlight-${name.replace('_2','').replace('_3','')}" cx="${coords.x}" cy="${coords.y}" r="8" class="board-pin-highlight" fill-opacity="0" data-board-pin-name="${name.replace('_2','').replace('_3','')}"/>`).join('');
+
+            wiringDiagramContainer.innerHTML = `
+                <svg class="wiring-svg" viewBox="0 0 ${svgWidth} ${svgHeight}">
+                    <g transform="translate(${(svgWidth - boardVisual.w)/2}, 20)">
+                       ${boardVisual.svg}
+                       ${boardLabelsSVG}
+                       ${boardPinHighlights}
+                    </g>
+                    ${componentsSVG}
+                    ${linesSVG}
+                </svg>
+            `;
+            
+            document.querySelectorAll('.board-pin-highlight').forEach(circle => {
+                circle.addEventListener('mouseenter', () => highlightPinInTable(circle.dataset.boardPinName, true));
+                circle.addEventListener('mouseleave', () => highlightPinInTable(circle.dataset.boardPinName, false));
+            });
+        }
+        
+        function highlightBoardPin(pinName, isHighlighted) {
+            if (!pinName) return;
+            const circle = document.getElementById(`highlight-${pinName}`);
+            if (circle) {
+                circle.style.fillOpacity = isHighlighted ? '1' : '0';
+            }
+        }
+        
+        function highlightPinInTable(pinName, isHighlighted) {
+            document.querySelectorAll('.pin-config-row').forEach(row => {
+                if (row.dataset.boardPinName === pinName) {
+                    row.style.backgroundColor = isHighlighted ? 'rgba(59, 130, 246, 0.2)' : 'transparent';
+                }
+            });
+        }
+
+        // --- EVENT HANDLERS ---
+        function handleAddComponent() {
+            const selectedType = componentSelector.value;
+            const newComponent = { id: componentIdCounter++, type: selectedType, pinMapping: {} };
+            addedComponents.push(newComponent);
+            renderAll();
+        }
+
+        function handleRemoveComponent(event) {
+            const compId = parseInt(event.target.dataset.compId);
+            addedComponents = addedComponents.filter(c => c.id !== compId);
+            logicRules = logicRules.filter(r => r.sourceId !== compId && r.targetId !== compId);
+            renderAll();
+        }
+
+        function handlePinSelection(event) {
+            const compId = parseInt(event.target.dataset.compId);
+            const pinName = event.target.dataset.pinName;
+            const selectedPin = event.target.value;
+            const component = addedComponents.find(c => c.id === compId);
+            if (component) component.pinMapping[pinName] = selectedPin;
+            renderAll();
+        }
+
+        function handleAddLogicRule() {
+            logicRules.push({ id: logicRuleIdCounter++, sourceId: null, conditionIndex: null, targetId: null, actionIndex: null });
+            renderLogicRules();
+        }
+
+        function handleRemoveLogicRule(event) {
+            const ruleId = parseInt(event.target.dataset.ruleId);
+            logicRules = logicRules.filter(r => r.id !== ruleId);
+            renderLogicRules();
+        }
+
+        function handleLogicChange(event) {
+            const ruleId = parseInt(event.target.dataset.ruleId);
+            const rule = logicRules.find(r => r.id === ruleId);
+            if (!rule) return;
+            const selectType = event.target.classList[0];
+            const value = event.target.value ? parseInt(event.target.value) : null;
+            if (selectType === 'logic-source') { rule.sourceId = value; rule.conditionIndex = null; } 
+            else if (selectType === 'logic-condition') { rule.conditionIndex = value; } 
+            else if (selectType === 'logic-target') { rule.targetId = value; rule.actionIndex = null; } 
+            else if (selectType === 'logic-action') { rule.actionIndex = value; }
+            renderLogicRules();
+        }
+
+        function handleCopyCode() {
+            navigator.clipboard.writeText(generatedCodeEl.textContent).then(() => {
+                notification.classList.remove('hidden');
+                setTimeout(() => notification.classList.add('hidden'), 2000);
+            });
+        }
+
+        // --- CODE GENERATION ENGINE ---
+        function handleGenerateCode() {
+            errorPanel.innerHTML = ''; errorPanel.classList.add('hidden');
+            const includes = new Set(), globals = new Set(), setupCode = new Set(), stateReaders = new Set(), timedTasks = [];
+            addedComponents.forEach(comp => {
+                const compInfo = componentDB[comp.type];
+                compInfo.libs.forEach(lib => includes.add(`#include <${lib}>`));
+                if ((compInfo.setup && compInfo.setup.includes('Serial.')) || (compInfo.loop && compInfo.loop.code.includes('Serial.'))) {
+                    setupCode.add('Serial.begin(9600);');
+                }
+                let processedGlobals = (compInfo.globals || '').replace(/{id}/g, comp.id);
+                let processedSetup = (compInfo.setup || '').replace(/{id}/g, comp.id);
+                for (const pinName in comp.pinMapping) {
+                    const boardPin = comp.pinMapping[pinName];
+                    processedGlobals = processedGlobals.replace(`{${pinName}}`, boardPin);
+                    processedSetup = processedSetup.replace(`{${pinName}}`, boardPin);
+                }
+                globals.add(processedGlobals);
+                setupCode.add(processedSetup);
+                if (compInfo.loop) {
+                    const loopCode = compInfo.loop.code.replace(/{id}/g, comp.id);
+                    if (compInfo.loop.isStateReader) { stateReaders.add(loopCode); } 
+                    else { timedTasks.push({ id: comp.id, name: compInfo.name, code: loopCode, interval: compInfo.loop.interval }); }
+                }
+            });
+            let finalCode = `/*\n * Auto-generated by Visual Coder - Logic Edition\n * Board: ${boardPins[boardSelector.value].name}\n * Date: ${new Date().toLocaleString()}\n */\n\n`;
+            finalCode += Array.from(includes).join('\n') + '\n\n';
+            finalCode += Array.from(globals).filter(g => g).join('\n') + '\n\n';
+            if (timedTasks.length > 0) { finalCode += timedTasks.map(t => `unsigned long previousMillis_${t.id} = 0;`).join('\n') + '\n\n'; }
+            finalCode += 'void setup() {\n  ' + Array.from(setupCode).filter(s => s).join('\n  ') + '\n}\n\n';
+            finalCode += 'void loop() {\n';
+            if (stateReaders.size > 0) { finalCode += '  // --- Read component states ---\n  ' + Array.from(stateReaders).join('\n  ') + '\n\n'; }
+            if (logicRules.length > 0) {
+                finalCode += '  // --- Execute logic rules ---\n';
+                logicRules.forEach(rule => {
+                    if (rule.sourceId !== null && rule.conditionIndex !== null && rule.targetId !== null && rule.actionIndex !== null) {
+                        const sourceComp = addedComponents.find(c => c.id === rule.sourceId);
+                        const targetComp = addedComponents.find(c => c.id === rule.targetId);
+                        const condition = componentDB[sourceComp.type].logic.conditions[rule.conditionIndex];
+                        const action = componentDB[targetComp.type].logic.actions[rule.actionIndex];
+                        const conditionCode = condition.code.replace(/{id}/g, sourceComp.id);
+                        const actionCode = action.code.replace(/{id}/g, targetComp.id);
+                        finalCode += `  if (${conditionCode}) {\n    ${actionCode}\n  }\n`;
+                    }
+                });
+                finalCode += '\n';
+            }
+            if (timedTasks.length > 0) {
+                finalCode += '  // --- Handle timed tasks ---\n  unsigned long currentMillis = millis();\n';
+                finalCode += timedTasks.map(t => `  if (currentMillis - previousMillis_${t.id} >= ${t.interval}) {\n    previousMillis_${t.id} = currentMillis;\n    ${t.code.replace(/\n/g, '\n    ')}\n  }`).join('\n\n') + '\n';
+            }
+            finalCode += '}\n';
+            generatedCodeEl.textContent = finalCode;
+            hljs.highlightElement(generatedCodeEl);
+        }
+        // --- START THE APP ---
+        initialize();
+    </script>
+</body>
+</html>
