@@ -10,7 +10,7 @@
 - Generate copy-paste-ready Arduino code
 
 ## 🚀 Live Demo
-👉 [Click here to try it now](https://yourusername.github.io/visual-coder/)
+👉 [Click here to try it now](https://sunny-369-star.github.io/visual-coder/)
 
 ## 📁 Tech Stack
 - HTML5
